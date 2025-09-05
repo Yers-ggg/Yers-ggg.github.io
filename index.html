@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Checkers</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #2d3748;
+            color: #e2e8f0;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .game-container {
+            background-color: #4a5568;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            max-width: 95%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        canvas {
+            border: 4px solid #718096;
+            border-radius: 0.5rem;
+            background-color: #3d4a5b;
+            touch-action: none; /* Prevents default touch actions */
+        }
+        .message-box {
+            background-color: #718096;
+            color: #1a202c;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-weight: bold;
+            margin-top: 1rem;
+        }
+        .restart-button {
+            margin-top: 1rem;
+            padding: 0.5rem 1rem;
+            background-color: #48bb78;
+            color: #1a202c;
+            border-radius: 0.5rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .restart-button:hover {
+            background-color: #68d391;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="game-container">
+        <h1 class="text-3xl font-bold mb-4">Checkers</h1>
+        <canvas id="checkers-board" width="400" height="400"></canvas>
+        <div id="game-message" class="message-box">Black's turn</div>
+        <button id="restart-button" class="restart-button">Restart Game</button>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const canvas = document.getElementById('checkers-board');
+            const ctx = canvas.getContext('2d');
+            const messageBox = document.getElementById('game-message');
+            const restartButton = document.getElementById('restart-button');
+
+            const boardSize = 8;
+            const cellSize = canvas.width / boardSize;
+
+            const board = [];
+            let currentPlayer = 'black';
+            let selectedPiece = null;
+            let isGameOver = false;
+
+            // Piece object
+            function Piece(row, col, color) {
+                this.row = row;
+                this.col = col;
+                this.color = color;
+                this.isKing = false;
+                this.isJumping = false;
+            }
+
+            function initBoard() {
+                for (let r = 0; r < boardSize; r++) {
+                    board[r] = [];
+                    for (let c = 0; c < boardSize; c++) {
+                        board[r][c] = null;
+                    }
+                }
+
+                for (let r = 0; r < 3; r++) {
+                    for (let c = 0; c < boardSize; c++) {
+                        if ((r + c) % 2 !== 0) {
+                            board[r][c] = new Piece(r, c, 'black');
+                        }
+                    }
+                }
+
+                for (let r = 5; r < boardSize; r++) {
+                    for (let c = 0; c < boardSize; c++) {
+                        if ((r + c) % 2 !== 0) {
+                            board[r][c] = new Piece(r, c, 'white');
+                        }
+                    }
+                }
+            }
+
+            function drawBoard() {
+                for (let r = 0; r < boardSize; r++) {
+                    for (let c = 0; c < boardSize; c++) {
+                        const color = (r + c) % 2 === 0 ? '#b58863' : '#e2e8f0';
+                        ctx.fillStyle = color;
+                        ctx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
+
+                        if (board[r][c]) {
+                            drawPiece(board[r][c]);
+                        }
+                    }
+                }
+                if (selectedPiece) {
+                     // Draw selection highlight
+                    ctx.strokeStyle = '#38a169';
+                    ctx.lineWidth = 4;
+                    ctx.strokeRect(selectedPiece.col * cellSize + 2, selectedPiece.row * cellSize + 2, cellSize - 4, cellSize - 4);
+                }
+            }
+
+            function drawPiece(piece) {
+                const x = (piece.col + 0.5) * cellSize;
+                const y = (piece.row + 0.5) * cellSize;
+                const radius = cellSize / 2 - 5;
+                const pieceColor = piece.color === 'white' ? '#f7fafc' : '#1a202c';
+
+                ctx.beginPath();
+                ctx.arc(x, y, radius, 0, Math.PI * 2);
+                ctx.fillStyle = pieceColor;
+                ctx.fill();
+                ctx.closePath();
+
+                if (piece.isKing) {
+                    ctx.fillStyle = '#f6ad55';
+                    ctx.font = '24px Inter';
+                    ctx.fillText('K', x, y + 8);
+                }
+            }
+
+            function getClickedCell(x, y) {
+                const col = Math.floor(x / cellSize);
+                const row = Math.floor(y / cellSize);
+                return { row, col };
+            }
+
+            function isValidMove(start, end) {
+                const piece = board[start.row][start.col];
+                if (!piece) return false;
+
+                const rowDiff = end.row - start.row;
+                const colDiff = Math.abs(end.col - start.col);
+
+                // Cannot move to a non-empty cell
+                if (board[end.row][end.col]) return false;
+
+                // Simple diagonal move
+                const forwardDirection = piece.color === 'white' ? -1 : 1;
+                if (!piece.isKing && rowDiff !== forwardDirection) return false;
+
+                if (colDiff === 1 && Math.abs(rowDiff) === 1) {
+                    piece.isJumping = false;
+                    return true;
+                }
+
+                // Jump move
+                if (colDiff === 2 && Math.abs(rowDiff) === 2) {
+                    const jumpedRow = start.row + (rowDiff / 2);
+                    const jumpedCol = start.col + (end.col - start.col) / 2;
+                    const jumpedPiece = board[jumpedRow][jumpedCol];
+
+                    if (jumpedPiece && jumpedPiece.color !== piece.color) {
+                        piece.isJumping = true;
+                        return true;
+                    }
+                }
+
+                // King piece movement
+                if (piece.isKing) {
+                    if (Math.abs(rowDiff) === 1 && colDiff === 1) {
+                        piece.isJumping = false;
+                        return true;
+                    }
+                    if (Math.abs(rowDiff) === 2 && colDiff === 2) {
+                        const jumpedRow = start.row + (rowDiff / 2);
+                        const jumpedCol = start.col + (end.col - start.col) / 2;
+                        const jumpedPiece = board[jumpedRow][jumpedCol];
+                        if (jumpedPiece && jumpedPiece.color !== piece.color) {
+                            piece.isJumping = true;
+                            return true;
+                        }
+                    }
+                }
+                
+                return false;
+            }
+
+            function checkWin() {
+                let whiteCount = 0;
+                let blackCount = 0;
+
+                for (let r = 0; r < boardSize; r++) {
+                    for (let c = 0; c < boardSize; c++) {
+                        if (board[r][c]) {
+                            if (board[r][c].color === 'white') {
+                                whiteCount++;
+                            } else {
+                                blackCount++;
+                            }
+                        }
+                    }
+                }
+
+                if (whiteCount === 0) {
+                    messageBox.textContent = 'Black Wins!';
+                    isGameOver = true;
+                } else if (blackCount === 0) {
+                    messageBox.textContent = 'White Wins!';
+                    isGameOver = true;
+                }
+            }
+
+            function handleCanvasClick(e) {
+                if (isGameOver) return;
+                
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                const clickedCell = getClickedCell(x, y);
+                const piece = board[clickedCell.row][clickedCell.col];
+
+                if (selectedPiece) {
+                    const start = { row: selectedPiece.row, col: selectedPiece.col };
+                    const end = clickedCell;
+                    if (isValidMove(start, end)) {
+                        const movedPiece = board[start.row][start.col];
+                        board[end.row][end.col] = movedPiece;
+                        board[start.row][start.col] = null;
+                        
+                        // Handle capture
+                        if (movedPiece.isJumping) {
+                            const jumpedRow = start.row + (end.row - start.row) / 2;
+                            const jumpedCol = start.col + (end.col - start.col) / 2;
+                            board[jumpedRow][jumpedCol] = null;
+                        }
+
+                        // Kinging a piece
+                        if (movedPiece.color === 'white' && end.row === 0) {
+                            movedPiece.isKing = true;
+                        } else if (movedPiece.color === 'black' && end.row === boardSize - 1) {
+                            movedPiece.isKing = true;
+                        }
+                        
+                        movedPiece.row = end.row;
+                        movedPiece.col = end.col;
+
+                        selectedPiece = null;
+                        currentPlayer = currentPlayer === 'white' ? 'black' : 'white';
+                        messageBox.textContent = `${currentPlayer.charAt(0).toUpperCase() + currentPlayer.slice(1)}'s turn`;
+                        
+                        checkWin();
+                        drawBoard();
+                        return;
+                    }
+                }
+
+                if (piece && piece.color === currentPlayer) {
+                    selectedPiece = piece;
+                    drawBoard();
+                } else {
+                    selectedPiece = null;
+                    drawBoard();
+                }
+            }
+            
+            function gameLoop() {
+                drawBoard();
+                requestAnimationFrame(gameLoop);
+            }
+
+            function startGame() {
+                initBoard();
+                currentPlayer = 'black';
+                selectedPiece = null;
+                isGameOver = false;
+                messageBox.textContent = "Black's turn";
+                gameLoop();
+            }
+
+            canvas.addEventListener('click', handleCanvasClick);
+            restartButton.addEventListener('click', startGame);
+
+            startGame();
+        });
+    </script>
+</body>
+</html>
