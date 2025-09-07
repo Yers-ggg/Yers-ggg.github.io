@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tetris</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;700&display=swap');
+
+        body {
+            font-family: 'Roboto Mono', monospace;
+            background-color: #2d3748;
+            color: #e2e8f0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 1rem;
+            text-align: center;
+        }
+
+        .game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #4a5568;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            max-width: 95%;
+            width: 500px;
+        }
+
+        .game-info {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            margin-bottom: 1rem;
+            font-size: 1.25rem;
+            font-weight: bold;
+        }
+
+        canvas {
+            border: 4px solid #718096;
+            background-color: #2a313f;
+            touch-action: none;
+        }
+
+        .message-box {
+            background-color: #718096;
+            color: #1a202c;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-weight: bold;
+            margin-top: 1rem;
+            display: none;
+        }
+        
+        .controls {
+            margin-top: 1rem;
+            display: grid;
+            grid-template-areas: ". up ." "left down right";
+            gap: 1rem;
+            width: 100%;
+            max-width: 250px;
+        }
+
+        .controls button {
+            background-color: #48bb78;
+            color: #1a202c;
+            font-weight: bold;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            cursor: pointer;
+        }
+
+        .controls .up { grid-area: up; }
+        .controls .left { grid-area: left; }
+        .controls .down { grid-area: down; }
+        .controls .right { grid-area: right; }
+        
+        @media (min-width: 768px) {
+            .controls { display: none; }
+        }
+        
+        .gemini-features {
+            margin-top: 1.5rem;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .gemini-features button {
+            background-color: #63b3ed;
+            color: #1a202c;
+            font-weight: bold;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            transition: background-color 0.2s;
+            cursor: pointer;
+        }
+
+        .gemini-features button:hover {
+            background-color: #4299e1;
+        }
+
+        .gemini-output {
+            background-color: #2a313f;
+            color: #e2e8f0;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            min-height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <h1 class="text-3xl font-bold mb-4">Tetris</h1>
+        <div class="game-info">
+            <span>Score: <span id="score">0</span></span>
+            <span>Level: <span id="level">1</span></span>
+        </div>
+        <canvas id="tetris-board" width="200" height="400"></canvas>
+        <div id="game-over" class="message-box">Game Over!</div>
+        
+        <div class="controls md:hidden">
+            <button class="up" id="btn-up">Rotate</button>
+            <button class="left" id="btn-left">Left</button>
+            <button class="down" id="btn-down">Down</button>
+            <button class="right" id="btn-right">Right</button>
+        </div>
+
+        <div class="gemini-features">
+            <button id="get-tip-btn">✨ Get a Tip</button>
+            <button id="analyze-game-btn" class="hidden">✨ Analyze My Game</button>
+            <div id="gemini-output" class="gemini-output"></div>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const canvas = document.getElementById('tetris-board');
+            const ctx = canvas.getContext('2d');
+            const scoreElement = document.getElementById('score');
+            const levelElement = document.getElementById('level');
+            const gameOverElement = document.getElementById('game-over');
+            const getTipBtn = document.getElementById('get-tip-btn');
+            const analyzeGameBtn = document.getElementById('analyze-game-btn');
+            const geminiOutput = document.getElementById('gemini-output');
+
+            const boardWidth = 10;
+            const boardHeight = 20;
+            const cellSize = canvas.width / boardWidth;
+
+            let board = [];
+            let score = 0;
+            let level = 1;
+            let dropCounter = 0;
+            let dropInterval = 1000;
+            let lastTime = 0;
+            let isGameOver = false;
+
+            const colors = [
+                null,
+                '#FF0D72', // T
+                '#0DC2FF', // I
+                '#0DFF72', // S
+                '#F538FF', // Z
+                '#FF8E0D', // L
+                '#FFE10D', // J
+                '#3877FF'  // O
+            ];
+
+            const tetrominoes = [
+                // T
+                [
+                    [0, 1, 0],
+                    [1, 1, 1],
+                    [0, 0, 0]
+                ],
+                // I
+                [
+                    [0, 0, 0, 0],
+                    [2, 2, 2, 2],
+                    [0, 0, 0, 0],
+                    [0, 0, 0, 0]
+                ],
+                // S
+                [
+                    [0, 3, 3],
+                    [3, 3, 0],
+                    [0, 0, 0]
+                ],
+                // Z
+                [
+                    [4, 4, 0],
+                    [0, 4, 4],
+                    [0, 0, 0]
+                ],
+                // L
+                [
+                    [0, 0, 5],
+                    [5, 5, 5],
+                    [0, 0, 0]
+                ],
+                // J
+                [
+                    [6, 0, 0],
+                    [6, 6, 6],
+                    [0, 0, 0]
+                ],
+                // O
+                [
+                    [7, 7],
+                    [7, 7]
+                ]
+            ];
+
+            let currentPiece = {
+                matrix: null,
+                position: { x: 0, y: 0 }
+            };
+
+            function createMatrix(w, h) {
+                const matrix = [];
+                while (h--) {
+                    matrix.push(new Array(w).fill(0));
+                }
+                return matrix;
+            }
+
+            function draw() {
+                ctx.fillStyle = '#2a313f';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                drawMatrix(board, { x: 0, y: 0 });
+                drawMatrix(currentPiece.matrix, currentPiece.position);
+            }
+
+            function drawMatrix(matrix, offset) {
+                if (!matrix) return;
+                matrix.forEach((row, y) => {
+                    row.forEach((value, x) => {
+                        if (value !== 0) {
+                            ctx.fillStyle = colors[value];
+                            ctx.fillRect((x + offset.x) * cellSize, (y + offset.y) * cellSize, cellSize, cellSize);
+                            ctx.strokeStyle = '#4a5568';
+                            ctx.lineWidth = 1;
+                            ctx.strokeRect((x + offset.x) * cellSize, (y + offset.y) * cellSize, cellSize, cellSize);
+                        }
+                    });
+                });
+            }
+
+            function collide(board, piece) {
+                const [matrix, position] = [piece.matrix, piece.position];
+                for (let y = 0; y < matrix.length; y++) {
+                    for (let x = 0; x < matrix[y].length; x++) {
+                        if (matrix[y][x] !== 0 &&
+                            (board[y + position.y] && board[y + position.y][x + position.x]) !== 0) {
+                            return true;
+                        }
+                    }
+                }
+                return false;
+            }
+
+            function merge(board, piece) {
+                piece.matrix.forEach((row, y) => {
+                    row.forEach((value, x) => {
+                        if (value !== 0) {
+                            board[y + piece.position.y][x + piece.position.x] = value;
+                        }
+                    });
+                });
+            }
+
+            function rotate(matrix) {
+                const newMatrix = matrix.map(row => [...row]);
+                newMatrix.reverse();
+                for (let y = 0; y < newMatrix.length; y++) {
+                    for (let x = 0; x < y; x++) {
+                        [newMatrix[x][y], newMatrix[y][x]] = [newMatrix[y][x], newMatrix[x][y]];
+                    }
+                }
+                return newMatrix;
+            }
+
+            function checkLines() {
+                outer: for (let y = board.length - 1; y >= 0; y--) {
+                    for (let x = 0; x < board[y].length; x++) {
+                        if (board[y][x] === 0) {
+                            continue outer;
+                        }
+                    }
+                    const row = board.splice(y, 1)[0].fill(0);
+                    board.unshift(row);
+                    y++;
+
+                    score += 10;
+                    scoreElement.textContent = score;
+
+                    if (score % 100 === 0 && score > 0) {
+                        level++;
+                        levelElement.textContent = level;
+                        dropInterval = Math.max(100, dropInterval - 50);
+                    }
+                }
+            }
+
+            function resetPiece() {
+                const randomPiece = tetrominoes[Math.floor(Math.random() * tetrominoes.length)];
+                currentPiece.matrix = randomPiece;
+                currentPiece.position.y = 0;
+                currentPiece.position.x = Math.floor((boardWidth - currentPiece.matrix[0].length) / 2);
+
+                if (collide(board, currentPiece)) {
+                    gameOver();
+                }
+            }
+
+            function gameOver() {
+                isGameOver = true;
+                gameOverElement.style.display = 'block';
+                getTipBtn.classList.add('hidden');
+                analyzeGameBtn.classList.remove('hidden');
+                geminiOutput.textContent = 'Game Over! Click "Analyze My Game" to see your performance.';
+            }
+
+            function update(time = 0) {
+                const deltaTime = time - lastTime;
+                lastTime = time;
+                dropCounter += deltaTime;
+
+                if (dropCounter > dropInterval) {
+                    pieceDrop();
+                }
+
+                draw();
+                if (!isGameOver) {
+                    requestAnimationFrame(update);
+                }
+            }
+
+            function pieceDrop() {
+                currentPiece.position.y++;
+                if (collide(board, currentPiece)) {
+                    currentPiece.position.y--;
+                    merge(board, currentPiece);
+                    checkLines();
+                    resetPiece();
+                }
+                dropCounter = 0;
+            }
+
+            function movePiece(dir) {
+                currentPiece.position.x += dir;
+                if (collide(board, currentPiece)) {
+                    currentPiece.position.x -= dir;
+                }
+            }
+            
+            function rotatePiece() {
+                const newMatrix = rotate(currentPiece.matrix);
+                const originalMatrix = currentPiece.matrix;
+                currentPiece.matrix = newMatrix;
+                
+                if (collide(board, currentPiece)) {
+                    currentPiece.matrix = originalMatrix;
+                }
+            }
+
+            document.addEventListener('keydown', e => {
+                if (isGameOver) return;
+                if (e.key === 'ArrowLeft') {
+                    movePiece(-1);
+                } else if (e.key === 'ArrowRight') {
+                    movePiece(1);
+                } else if (e.key === 'ArrowDown') {
+                    pieceDrop();
+                } else if (e.key === 'ArrowUp') {
+                    rotatePiece();
+                }
+            });
+
+            // Touch controls
+            const controls = {
+                'btn-up': rotatePiece,
+                'btn-left': () => movePiece(-1),
+                'btn-down': pieceDrop,
+                'btn-right': () => movePiece(1)
+            };
+            Object.entries(controls).forEach(([id, handler]) => {
+                document.getElementById(id).addEventListener('click', handler);
+            });
+
+            function startGame() {
+                board = createMatrix(boardWidth, boardHeight);
+                score = 0;
+                level = 1;
+                isGameOver = false;
+                scoreElement.textContent = score;
+                levelElement.textContent = level;
+                gameOverElement.style.display = 'none';
+                getTipBtn.classList.remove('hidden');
+                analyzeGameBtn.classList.add('hidden');
+                geminiOutput.textContent = '';
+                dropInterval = 1000;
+                resetPiece();
+                update();
+            }
+
+            // Gemini API Integration
+            const API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=';
+            const apiKey = "";
+            let apiIsLoading = false;
+
+            async function callGeminiApi(prompt) {
+                if (apiIsLoading) return;
+                apiIsLoading = true;
+                geminiOutput.textContent = 'Generating...';
+
+                try {
+                    const payload = {
+                        contents: [{ parts: [{ text: prompt }] }],
+                    };
+                    
+                    const response = await fetch(API_URL + apiKey, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    const result = await response.json();
+                    const text = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (text) {
+                        geminiOutput.textContent = text;
+                    } else {
+                        geminiOutput.textContent = "Sorry, I couldn't get a response right now. Try again later.";
+                    }
+                } catch (error) {
+                    console.error('API Error:', error);
+                    geminiOutput.textContent = "An error occurred. Please try again.";
+                } finally {
+                    apiIsLoading = false;
+                }
+            }
+
+            getTipBtn.addEventListener('click', () => {
+                const prompt = "Provide a concise, single-sentence tip for playing a block-stacking game. Do not mention Tetris. Be helpful and encouraging.";
+                callGeminiApi(prompt);
+            });
+
+            analyzeGameBtn.addEventListener('click', () => {
+                const prompt = `The player just finished a game with a score of ${score} and reached level ${level}. Write a short, creative, and friendly message commenting on their performance. If the score is low, be encouraging. If the score is high, be congratulatory.`;
+                callGeminiApi(prompt);
+            });
+
+            // Start the game on initial load and handle restart
+            gameOverElement.addEventListener('click', () => {
+                if (isGameOver) {
+                    startGame();
+                }
+            });
+
+            startGame();
+        });
+    </script>
+</body>
+</html>
+
