@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Симуляция движения шайбы</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background-color: #1a202c;
+            color: #e2e8f0;
+            font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            text-align: center;
+            flex-direction: column;
+        }
+        #simulation-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #2d3748;
+            padding: 1.5rem;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            max-width: 95vw;
+        }
+        canvas {
+            background-color: #1a202c;
+            border-radius: 0.5rem;
+            border: 1px solid #4a5568;
+            margin-bottom: 1rem;
+        }
+        .controls {
+            width: 100%;
+            max-width: 600px;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            padding: 0 1rem;
+        }
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start;
+        }
+        .control-group label {
+            font-size: 0.875rem;
+            margin-bottom: 0.25rem;
+        }
+        input[type="range"] {
+            width: 100%;
+            -webkit-appearance: none;
+            height: 8px;
+            background: #4a5568;
+            border-radius: 5px;
+            outline: none;
+            transition: background 0.2s;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #4299e1;
+            border-radius: 50%;
+            cursor: pointer;
+        }
+        .button-group {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            margin-top: 1rem;
+        }
+        button {
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            background-color: #4299e1;
+            color: white;
+            font-weight: bold;
+            transition: background-color 0.2s;
+        }
+        button:hover {
+            background-color: #3182ce;
+        }
+    </style>
+</head>
+<body>
+    <div id="simulation-container">
+        <h1 class="text-2xl font-bold mb-4">Симуляция движения шайбы</h1>
+        <canvas id="simulation-canvas" width="800" height="600"></canvas>
+        <div class="controls">
+            <div class="control-group">
+                <label for="k1-slider" id="k1-label">Коэффициент жесткости 1 ($k_1$): 10.00</label>
+                <input type="range" id="k1-slider" min="1" max="20" value="10" step="0.1">
+            </div>
+            <div class="control-group">
+                <label for="k2-slider" id="k2-label">Коэффициент жесткости 2 ($k_2$): 30.00</label>
+                <input type="range" id="k2-slider" min="1" max="60" value="30" step="0.1">
+            </div>
+            <div class="control-group">
+                <label for="mu-slider" id="mu-label">Коэффициент трения ($\mu$): 0.10</label>
+                <input type="range" id="mu-slider" min="0" max="1" value="0.1" step="0.01">
+            </div>
+            <div class="control-group">
+                <label for="g-slider" id="g-label">Ускорение ($g$): 9.81</label>
+                <input type="range" id="g-slider" min="0" max="20" value="9.81" step="0.01">
+            </div>
+            <div class="control-group">
+                <label for="L-slider" id="L-label">Длина ($L$): 100</label>
+                <input type="range" id="L-slider" min="50" max="200" value="100" step="1">
+            </div>
+            <div class="control-group">
+                <label for="m-slider" id="m-label">Масса ($m$): 2.00</label>
+                <input type="range" id="m-slider" min="1" max="10" value="2" step="0.1">
+            </div>
+            <div class="button-group">
+                <button id="start-btn">Старт</button>
+                <button id="pause-btn">Пауза</button>
+                <button id="reset-btn">Сброс</button>
+                <button id="trajectory-btn">Показать траекторию</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        window.onload = function() {
+            const canvas = document.getElementById('simulation-canvas');
+            const ctx = canvas.getContext('2d');
+            
+            // Получаем ползунки и метки
+            const k1Slider = document.getElementById('k1-slider');
+            const k2Slider = document.getElementById('k2-slider');
+            const muSlider = document.getElementById('mu-slider');
+            const gSlider = document.getElementById('g-slider');
+            const LSlider = document.getElementById('L-slider');
+            const mSlider = document.getElementById('m-slider');
+            const k1Label = document.getElementById('k1-label');
+            const k2Label = document.getElementById('k2-label');
+            const muLabel = document.getElementById('mu-label');
+            const gLabel = document.getElementById('g-label');
+            const LLabel = document.getElementById('L-label');
+            const mLabel = document.getElementById('m-label');
+
+            // Кнопки управления
+            const startBtn = document.getElementById('start-btn');
+            const pauseBtn = document.getElementById('pause-btn');
+            const resetBtn = document.getElementById('reset-btn');
+            const trajectoryBtn = document.getElementById('trajectory-btn');
+
+            let isRunning = false;
+            let showTrajectory = false;
+            let animationFrameId;
+
+            // Физические параметры и переменные
+            const dt = 0.05; // Временной шаг
+            let k1, k2, mu, g, L, m;
+            let puck = { x: 0, y: 0, vx: 0, vy: 0 };
+            let puckPath = [];
+            const maxPathLength = 5000;
+            
+            // Координаты точек
+            let A = { x: 0, y: 0 };
+            let B = { x: 0, y: 0 };
+            let C = { x: 0, y: 0 };
+            let D = { x: 0, y: 0 };
+
+            // Функция для обновления значений из ползунков
+            function updateParameters() {
+                k1 = parseFloat(k1Slider.value);
+                k2 = parseFloat(k2Slider.value);
+                mu = parseFloat(muSlider.value);
+                g = parseFloat(gSlider.value);
+                L = parseFloat(LSlider.value);
+                m = parseFloat(mSlider.value);
+
+                k1Label.textContent = `Коэффициент жесткости 1 ($k_1$): ${k1.toFixed(2)}`;
+                k2Label.textContent = `Коэффициент жесткости 2 ($k_2$): ${k2.toFixed(2)}`;
+                muLabel.textContent = `Коэффициент трения ($\mu$): ${mu.toFixed(2)}`;
+                gLabel.textContent = `Ускорение ($g$): ${g.toFixed(2)}`;
+                LLabel.textContent = `Длина ($L$): ${L}`;
+                mLabel.textContent = `Масса ($m$): ${m.toFixed(2)}`;
+
+                // Новые координаты
+                A = { x: -2 * L, y: L };
+                B = { x: -L, y: L };
+                C = { x: L, y: L };
+                D = { x: 2 * L, y: L };
+            }
+
+            // Функция для преобразования физических координат в координаты холста
+            const scale = 1;
+            function toCanvasX(x) {
+                return (canvas.width / 2) + x * scale;
+            }
+            function toCanvasY(y) {
+                return (canvas.height / 2) - y * scale;
+            }
+
+            // Функция для отрисовки всех элементов
+            function draw() {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                
+                // Отрисовка координатной сетки
+                ctx.strokeStyle = '#4a5568';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(0, canvas.height / 2);
+                ctx.lineTo(canvas.width, canvas.height / 2);
+                ctx.moveTo(canvas.width / 2, 0);
+                ctx.lineTo(canvas.width / 2, canvas.height);
+                ctx.stroke();
+
+                ctx.fillStyle = '#cbd5e0';
+                ctx.font = '12px Arial';
+                ctx.fillText('X', canvas.width - 15, canvas.height / 2 - 5);
+                ctx.fillText('Y', canvas.width / 2 + 5, 15);
+                ctx.fillText('O', canvas.width / 2 + 5, canvas.height / 2 + 15);
+
+                // Отрисовка точек A, B, C, D
+                const R = 5;
+                ctx.fillStyle = '#8a2be2';
+                ctx.beginPath();
+                ctx.arc(toCanvasX(A.x), toCanvasY(A.y), R, 0, 2 * Math.PI);
+                ctx.arc(toCanvasX(B.x), toCanvasY(B.y), R, 0, 2 * Math.PI);
+                ctx.arc(toCanvasX(C.x), toCanvasY(C.y), R, 0, 2 * Math.PI);
+                ctx.arc(toCanvasX(D.x), toCanvasY(D.y), R, 0, 2 * Math.PI);
+                ctx.fill();
+
+                // Отрисовка резинок
+                ctx.strokeStyle = '#a0aec0';
+                ctx.lineWidth = 2;
+
+                // Резинка 1
+                ctx.beginPath();
+                ctx.moveTo(toCanvasX(A.x), toCanvasY(A.y));
+                ctx.lineTo(toCanvasX(B.x), toCanvasY(B.y));
+                ctx.lineTo(toCanvasX(puck.x), toCanvasY(puck.y));
+                ctx.stroke();
+                
+                // Резинка 2
+                ctx.beginPath();
+                ctx.moveTo(toCanvasX(D.x), toCanvasY(D.y));
+                ctx.lineTo(toCanvasX(C.x), toCanvasY(C.y));
+                ctx.lineTo(toCanvasX(puck.x), toCanvasY(puck.y));
+                ctx.stroke();
+
+                // Отрисовка траектории
+                if (showTrajectory && puckPath.length > 1) {
+                    ctx.strokeStyle = '#3182ce';
+                    ctx.lineWidth = 1;
+                    ctx.beginPath();
+                    ctx.moveTo(toCanvasX(puckPath[0].x), toCanvasY(puckPath[0].y));
+                    for (let i = 1; i < puckPath.length; i++) {
+                        ctx.lineTo(toCanvasX(puckPath[i].x), toCanvasY(puckPath[i].y));
+                    }
+                    ctx.stroke();
+                }
+
+                // Отрисовка шайбы
+                ctx.fillStyle = '#4299e1';
+                ctx.beginPath();
+                ctx.arc(toCanvasX(puck.x), toCanvasY(puck.y), 10, 0, 2 * Math.PI);
+                ctx.fill();
+            }
+
+            // Основной цикл симуляции
+            function animate() {
+                if (!isRunning) return;
+
+                // Расчет сил упругости
+                const dist_AB = Math.sqrt((B.x - A.x)**2 + (B.y - A.y)**2);
+                const dist_BO = Math.sqrt((puck.x - B.x)**2 + (puck.y - B.y)**2);
+                const F1_mag = k1 * (dist_AB + dist_BO - L);
+                
+                const dist_DC = Math.sqrt((C.x - D.x)**2 + (C.y - D.y)**2);
+                const dist_CO = Math.sqrt((puck.x - C.x)**2 + (puck.y - C.y)**2);
+                const F2_mag = k2 * (dist_DC + dist_CO - L);
+
+                // Векторы сил упругости
+                let F1_x = 0;
+                let F1_y = 0;
+                if (dist_BO > 1e-6 && F1_mag > 1e-6) {
+                    F1_x = -F1_mag * (puck.x - B.x) / dist_BO;
+                    F1_y = -F1_mag * (puck.y - B.y) / dist_BO;
+                }
+
+                let F2_x = 0;
+                let F2_y = 0;
+                if (dist_CO > 1e-6 && F2_mag > 1e-6) {
+                    F2_x = -F2_mag * (puck.x - C.x) / dist_CO;
+                    F2_y = -F2_mag * (puck.y - C.y) / dist_CO;
+                }
+
+                // Сила трения
+                let F_friction_x = 0;
+                let F_friction_y = 0;
+                const speed = Math.sqrt(puck.vx * puck.vx + puck.vy * puck.vy);
+                if (speed > 1e-6) {
+                    const F_friction_mag = mu * m * g;
+                    F_friction_x = -F_friction_mag * puck.vx / speed;
+                    F_friction_y = -F_friction_mag * puck.vy / speed;
+                }
+
+                // Расчет ускорения
+                const ax = (F1_x + F2_x + F_friction_x) / m;
+                const ay = (F1_y + F2_y + F_friction_y) / m;
+
+                // Обновление скорости и позиции (метод Эйлера)
+                puck.vx += ax * dt;
+                puck.vy += ay * dt;
+                puck.x += puck.vx * dt;
+                puck.y += puck.vy * dt;
+
+                puckPath.push({ x: puck.x, y: puck.y });
+                if (puckPath.length > maxPathLength) {
+                    puckPath.shift();
+                }
+
+                draw();
+                animationFrameId = requestAnimationFrame(animate);
+            }
+
+            // Обработчики событий для ползунков
+            k1Slider.addEventListener('input', updateParameters);
+            k2Slider.addEventListener('input', updateParameters);
+            muSlider.addEventListener('input', updateParameters);
+            gSlider.addEventListener('input', updateParameters);
+            LSlider.addEventListener('input', updateParameters);
+            mSlider.addEventListener('input', updateParameters);
+
+            // Обработчики событий для кнопок
+            startBtn.addEventListener('click', () => {
+                if (!isRunning) {
+                    isRunning = true;
+                    animate();
+                }
+            });
+
+            pauseBtn.addEventListener('click', () => {
+                isRunning = false;
+                cancelAnimationFrame(animationFrameId);
+            });
+
+            resetBtn.addEventListener('click', () => {
+                isRunning = false;
+                cancelAnimationFrame(animationFrameId);
+                puck = { x: 0, y: 0, vx: 0, vy: 0 };
+                puckPath = [];
+                updateParameters();
+                draw();
+            });
+
+            trajectoryBtn.addEventListener('click', () => {
+                showTrajectory = !showTrajectory;
+                draw(); // Перерисовываем, чтобы обновить видимость траектории
+            });
+
+            // Инициализация
+            updateParameters();
+            draw();
+        };
+    </script>
+</body>
+</html>
